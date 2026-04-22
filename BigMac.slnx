@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="BigMac/BigMac.csproj" />
+  <Project Path="BigMac.Tests/BigMac.Tests.csproj" />
+</Solution>

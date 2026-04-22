@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\BigMac\Scripting\Ast.cs" Link="Scripting\Ast.cs" />
+    <Compile Include="..\BigMac\Scripting\CommandTemplate.cs" Link="Scripting\CommandTemplate.cs" />
+    <Compile Include="..\BigMac\Scripting\ExpressionRuntime.cs" Link="Scripting\ExpressionRuntime.cs" />
+    <Compile Include="..\BigMac\Scripting\ScriptConditions.cs" Link="Scripting\ScriptConditions.cs" />
+    <Compile Include="..\BigMac\Scripting\ScriptLexer.cs" Link="Scripting\ScriptLexer.cs" />
+    <Compile Include="..\BigMac\Scripting\ScriptParser.cs" Link="Scripting\ScriptParser.cs" />
+    <Compile Include="..\BigMac\Scripting\ScriptRuntime.cs" Link="Scripting\ScriptRuntime.cs" />
+  </ItemGroup>
+</Project>

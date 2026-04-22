@@ -1,0 +1,18 @@
+{
+  "Author": "Eauldane",
+  "Name": "BigMac",
+  "Punchline": "Macros with a bit of sauce.",
+  "Description": "Extends macro capabilities with conditionals, extra functions, and a few other nice things.",
+  "InternalName": "BigMac",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 14,
+  "IconUrl": "https://eauldane.com/logos/bigmac.png",
+  "RepoUrl": "https://github.com/Eauldane/BigMac",
+  "LoadPriority": 0,
+  "Tags": [
+    "macro",
+    "scripting"
+  ],
+  "CanUnloadAsync": true,
+  "MakeZip": false
+}
