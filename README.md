@@ -10,6 +10,7 @@ A full usage guide is included within the plugin.
 BigMac adds the following features:
 - Boolean logic
 - Timers
+- Loop blocks
 - Action availability/readiness
 - Class check
 - Random chance

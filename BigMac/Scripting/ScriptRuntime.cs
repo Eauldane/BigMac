@@ -70,6 +70,12 @@ public sealed class ScriptExecutor
                 await ExecuteBranchAsync(branch, commandSink, scope, cancellationToken).ConfigureAwait(false);
                 break;
             }
+            case LoopStatement loop:
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await ExecuteBranchAsync(loop.Block, commandSink, scope, cancellationToken).ConfigureAwait(false);
+                }
         }
     }
 
@@ -110,6 +116,7 @@ public static class ScriptPreviewTreeBuilder
             WaitStatement wait => new ScriptPreviewNode($"wait {FormatSeconds(wait.Seconds)}s", []),
             ChanceStatement chance => BuildChance(chance),
             IfStatement conditional => BuildConditional(conditional),
+            LoopStatement loop => BuildLoop(loop),
             _ => new ScriptPreviewNode("unknown", []),
         };
 
@@ -145,6 +152,9 @@ public static class ScriptPreviewTreeBuilder
 
         return new ScriptPreviewNode($"if {ScriptConditionDescriber.Describe(conditional.Condition)}", children);
     }
+
+    private static ScriptPreviewNode BuildLoop(LoopStatement loop)
+        => new("loop", [BuildBranch("body", loop.Block)]);
 
     private static ScriptPreviewNode BuildBranch(string name, ScriptBlock block)
     {

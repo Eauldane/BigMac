@@ -45,6 +45,16 @@ public static class ScriptHelpReference
                     wait(1.5)
                     /ac "Maim"
                     """),
+                new ScriptHelpEntry(
+                    "Loop blocks",
+                    "Use loop { ... } to repeat a block until it is cancelled. Running the same macro again cancels its active loop, and moving also stops looping macros.",
+                    "loop { ... }",
+                    """
+                    loop {
+                        /ac "Sprint"
+                        wait(1)
+                    }
+                    """),
             ]),
         new ScriptHelpSection(
             "Conditionals",
@@ -193,6 +203,40 @@ public static class ScriptHelpReference
                         }
                     } else {
                         /echo Aww. 
+                    }
+                    """),
+            ]),
+        new ScriptHelpSection(
+            "Loops",
+            "Loop blocks repeat a nested block until the macro is cancelled. Re-running the same looping macro toggles it off, and movement also cancels active loops.",
+            [
+                new ScriptHelpEntry(
+                    "Basic loop",
+                    "Use loop { ... } to repeat commands. In practice you should include wait(...) inside the loop body so it does not hammer commands continuously.",
+                    "loop { ... }",
+                    """
+                    loop {
+                        /echo Tick.
+                        wait(2)
+                    }
+                    """),
+                new ScriptHelpEntry(
+                    "Loop with conditions",
+                    "Loop bodies can contain the same statements as any other block, including if/else and chance blocks.",
+                    """
+                    loop {
+                        ...
+                    }
+                    """,
+                    """
+                    loop {
+                        if (target_is_enemy()) {
+                            /ac Provoke <t>
+                        } else {
+                            /echo Waiting for an enemy target.
+                        }
+
+                        wait(1)
                     }
                     """),
             ]),
@@ -560,6 +604,21 @@ public static class ScriptHelpReference
                         }
                     } else {
                         /echo No target selected.
+                    }
+                    """),
+                new ScriptHelpEntry(
+                    "Cancelable loop script",
+                    "A simple looping macro that repeats until you run it again or start moving.",
+                    Example:
+                    """
+                    loop {
+                        if (has_target && target_is_enemy()) {
+                            /echo Watching ${target_name} at ${distance_to_target()} yalms.
+                        } else {
+                            /echo No enemy target.
+                        }
+
+                        wait(1)
                     }
                     """),
             ]),

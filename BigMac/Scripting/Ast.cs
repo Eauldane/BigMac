@@ -19,6 +19,8 @@ public sealed record ChanceStatement(ChanceCondition Chance, ScriptBlock ThenBlo
 
 public sealed record IfStatement(ExpressionNode Condition, ScriptBlock ThenBlock, ScriptBlock? ElseBlock) : ScriptStatement;
 
+public sealed record LoopStatement(ScriptBlock Block) : ScriptStatement;
+
 public sealed record ScriptBlock(IReadOnlyList<ScriptStatement> Statements);
 
 public enum ChanceConditionKind
@@ -53,6 +55,7 @@ public enum TokenKind
     Else,
     Let,
     Wait,
+    Loop,
     In,
     Number,
     LeftParen,
@@ -98,5 +101,38 @@ public static class ScriptCompiler
             error = parseException;
             return false;
         }
+    }
+}
+
+public static class ScriptStructureInspector
+{
+    public static bool ContainsLoop(ScriptProgram program)
+        => ContainsLoop(program.Statements);
+
+    private static bool ContainsLoop(IReadOnlyList<ScriptStatement> statements)
+    {
+        foreach (var statement in statements)
+        {
+            if (statement is LoopStatement)
+            {
+                return true;
+            }
+
+            if (statement is ChanceStatement chance
+             && (ContainsLoop(chance.ThenBlock.Statements)
+              || chance.ElseBlock is not null && ContainsLoop(chance.ElseBlock.Statements)))
+            {
+                return true;
+            }
+
+            if (statement is IfStatement conditional
+             && (ContainsLoop(conditional.ThenBlock.Statements)
+              || conditional.ElseBlock is not null && ContainsLoop(conditional.ElseBlock.Statements)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

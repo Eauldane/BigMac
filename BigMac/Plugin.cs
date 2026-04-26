@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using BigMac.Services;
 using BigMac.UI;
 using Dalamud.Game.Command;
@@ -17,6 +18,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly ICommandManager _commandManager;
     private readonly IClientState _clientState;
+    private readonly IObjectTable _objectTable;
 
     private readonly ConfigService _config;
     private readonly BuiltInCommandCatalog _builtInCommandCatalog;
@@ -24,6 +26,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MacroHotbarService _macroHotbarService;
     private readonly BigMacWindow _window;
     private readonly BigMacHelpWindow _helpWindow;
+    private Vector3? _lastObservedPlayerPosition;
     private bool _isPvpLocked;
 
     public Plugin(
@@ -42,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
         _pluginInterface = pluginInterface;
         _commandManager = commandManager;
         _clientState = clientState;
+        _objectTable = objectTable;
 
         ElezenInit.Init(pluginInterface, this);
 
@@ -125,6 +129,7 @@ public sealed class Plugin : IDalamudPlugin
     private void DrawUi()
     {
         SyncPvpState();
+        CancelLoopsOnMovement();
         _windowSystem.Draw();
     }
 
@@ -152,5 +157,26 @@ public sealed class Plugin : IDalamudPlugin
         {
             _helpWindow.IsOpen = false;
         }
+    }
+
+    private void CancelLoopsOnMovement()
+    {
+        const float movementCancelDistanceSquared = 0.0025f;
+
+        var localPlayer = _objectTable.LocalPlayer;
+        if (localPlayer is null)
+        {
+            _lastObservedPlayerPosition = null;
+            return;
+        }
+
+        var currentPosition = localPlayer.Position;
+        if (_lastObservedPlayerPosition is Vector3 previousPosition
+         && Vector3.DistanceSquared(previousPosition, currentPosition) > movementCancelDistanceSquared)
+        {
+            _macroRegistry.CancelLoopingMacrosForMovement();
+        }
+
+        _lastObservedPlayerPosition = currentPosition;
     }
 }

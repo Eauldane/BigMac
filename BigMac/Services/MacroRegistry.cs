@@ -22,6 +22,9 @@ public sealed class MacroRegistry : IDisposable
     private readonly BuiltInCommandCatalog _builtInCommands;
     private readonly Dictionary<string, SavedMacroDefinition> _registeredMacros = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, string> _commandsByMacroId = new();
+    private readonly object _executionSync = new();
+    private readonly HashSet<ActiveMacroExecution> _activeExecutions = [];
+    private readonly Dictionary<Guid, ActiveMacroExecution> _activeLoopExecutions = new();
     private readonly ScriptExecutor _executor;
     private bool _isEnabled = true;
 
@@ -43,6 +46,8 @@ public sealed class MacroRegistry : IDisposable
 
     public void Dispose()
     {
+        CancelActiveMacros();
+
         foreach (var command in _registeredMacros.Keys.ToArray())
         {
             _commandManager.RemoveHandler(command);
@@ -121,8 +126,16 @@ public sealed class MacroRegistry : IDisposable
         }
 
         _isEnabled = isEnabled;
+        if (!isEnabled)
+        {
+            CancelActiveMacros();
+        }
+
         Reload();
     }
+
+    public void CancelLoopingMacrosForMovement()
+        => CancelActiveMacros(static execution => execution.IsLooping);
 
     public bool TryValidateCommand(string? commandText, Guid? macroId, out string normalizedCommand, out string error)
     {
@@ -196,20 +209,36 @@ public sealed class MacroRegistry : IDisposable
             return;
         }
 
-        _ = ExecuteMacroAsync(macro);
+        _ = ExecuteOrToggleMacroAsync(macro);
     }
 
-    private async Task ExecuteMacroAsync(SavedMacroDefinition macro)
+    private async Task ExecuteOrToggleMacroAsync(SavedMacroDefinition macro)
     {
         if (!_isEnabled)
         {
             return;
         }
 
+        if (TryCancelActiveLoop(macro.Id))
+        {
+            return;
+        }
+
+        ActiveMacroExecution? execution = null;
+
         try
         {
             var program = ScriptParser.Parse(macro.Script);
-            await _executor.ExecuteAsync(program, new LiveCommandSink(macro.AllowDangerousCommands)).ConfigureAwait(false);
+            var isLoopingMacro = ScriptStructureInspector.ContainsLoop(program);
+            if (!TryBeginExecution(macro.Id, isLoopingMacro, out execution))
+            {
+                return;
+            }
+
+            await _executor.ExecuteAsync(program, new LiveCommandSink(macro.AllowDangerousCommands), execution.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (execution?.IsCancellationRequested == true)
+        {
         }
         catch (ScriptParseException parseException)
         {
@@ -218,6 +247,13 @@ public sealed class MacroRegistry : IDisposable
         catch (Exception exception)
         {
             _chatGui.Print($"[BigMac] Could not run {macro.Command}: {exception.Message}");
+        }
+        finally
+        {
+            if (execution is not null)
+            {
+                CompleteExecution(macro.Id, execution);
+            }
         }
     }
 
@@ -250,6 +286,107 @@ public sealed class MacroRegistry : IDisposable
             => _allowDangerousCommands = allowDangerousCommands;
 
         public async ValueTask ExecuteAsync(string commandText, CancellationToken cancellationToken)
-            => await ElezenCommands.SendAsync(commandText, _allowDangerousCommands).ConfigureAwait(false);
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await ElezenCommands.SendAsync(commandText, _allowDangerousCommands).ConfigureAwait(false);
+        }
+    }
+
+    private bool TryBeginExecution(Guid macroId, bool isLoopingMacro, out ActiveMacroExecution? execution)
+    {
+        lock (_executionSync)
+        {
+            if (isLoopingMacro && _activeLoopExecutions.TryGetValue(macroId, out var existing))
+            {
+                existing.Cancel();
+                execution = null;
+                return false;
+            }
+
+            execution = new ActiveMacroExecution(isLoopingMacro);
+            _activeExecutions.Add(execution);
+            if (isLoopingMacro)
+            {
+                _activeLoopExecutions[macroId] = execution;
+            }
+
+            return true;
+        }
+    }
+
+    private bool TryCancelActiveLoop(Guid macroId)
+    {
+        lock (_executionSync)
+        {
+            if (!_activeLoopExecutions.TryGetValue(macroId, out var existing))
+            {
+                return false;
+            }
+
+            existing.Cancel();
+            return true;
+        }
+    }
+
+    private void CompleteExecution(Guid macroId, ActiveMacroExecution execution)
+    {
+        lock (_executionSync)
+        {
+            _activeExecutions.Remove(execution);
+            if (execution.IsLooping
+             && _activeLoopExecutions.TryGetValue(macroId, out var activeLoopExecution)
+             && ReferenceEquals(activeLoopExecution, execution))
+            {
+                _activeLoopExecutions.Remove(macroId);
+            }
+        }
+
+        execution.Dispose();
+    }
+
+    private void CancelActiveMacros(Func<ActiveMacroExecution, bool>? predicate = null)
+    {
+        ActiveMacroExecution[] executions;
+        lock (_executionSync)
+        {
+            executions = _activeExecutions
+                .Where(execution => predicate?.Invoke(execution) ?? true)
+                .ToArray();
+        }
+
+        foreach (var execution in executions)
+        {
+            execution.Cancel();
+        }
+    }
+
+    private sealed class ActiveMacroExecution : IDisposable
+    {
+        private readonly CancellationTokenSource _cancellationTokenSource = new();
+
+        public ActiveMacroExecution(bool isLooping)
+            => IsLooping = isLooping;
+
+        public bool IsLooping { get; }
+
+        public CancellationToken Token
+            => _cancellationTokenSource.Token;
+
+        public bool IsCancellationRequested
+            => _cancellationTokenSource.IsCancellationRequested;
+
+        public void Cancel()
+        {
+            try
+            {
+                _cancellationTokenSource.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        public void Dispose()
+            => _cancellationTokenSource.Dispose();
     }
 }

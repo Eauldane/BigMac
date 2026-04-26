@@ -58,6 +58,11 @@ public sealed class ScriptParser
             return ParseWaitStatement();
         }
 
+        if (Match(TokenKind.Loop))
+        {
+            return ParseLoopStatement();
+        }
+
         if (Match(TokenKind.CommandLine, out var commandToken))
         {
             return new CommandStatement(CommandTemplate.Parse(commandToken.Lexeme, commandToken.Line, commandToken.Column));
@@ -153,6 +158,9 @@ public sealed class ScriptParser
 
         return new WaitStatement(seconds);
     }
+
+    private LoopStatement ParseLoopStatement()
+        => new(ParseBlock());
 
     private ChanceCondition ParseChanceCondition()
     {
@@ -362,6 +370,9 @@ public sealed class ScriptParser
                         ValidateScope(conditional.ElseBlock.Statements);
                     }
 
+                    break;
+                case LoopStatement loop:
+                    ValidateScope(loop.Block.Statements);
                     break;
             }
         }

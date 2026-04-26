@@ -120,6 +120,7 @@ public sealed class ScriptLexer
             "else" => new ScriptToken(TokenKind.Else, word, line, column),
             "let" => new ScriptToken(TokenKind.Let, word, line, column),
             "wait" => new ScriptToken(TokenKind.Wait, word, line, column),
+            "loop" => new ScriptToken(TokenKind.Loop, word, line, column),
             "in" => new ScriptToken(TokenKind.In, word, line, column),
             _ => throw new ScriptParseException($"Unexpected keyword '{word}'.", line, column),
         };

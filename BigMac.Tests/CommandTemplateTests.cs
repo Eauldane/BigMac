@@ -458,6 +458,34 @@ public sealed class CommandTemplateTests
     }
 
     [Fact]
+    public void ScriptParser_LoopStatement_ParsesBlock()
+    {
+        var program = ScriptParser.Parse("""
+            loop {
+                /echo tick
+                wait(1.2)
+            }
+            """);
+
+        var loop = Assert.IsType<LoopStatement>(Assert.Single(program.Statements));
+        Assert.Equal(2, loop.Block.Statements.Count);
+    }
+
+    [Fact]
+    public void ScriptStructureInspector_ContainsLoop_FindsNestedLoopBlocks()
+    {
+        var program = ScriptParser.Parse("""
+            if (true) {
+                loop {
+                    wait(1)
+                }
+            }
+            """);
+
+        Assert.True(ScriptStructureInspector.ContainsLoop(program));
+    }
+
+    [Fact]
     public void ScriptParser_WaitStatement_ParsesDecimalSeconds()
     {
         var program = ScriptParser.Parse("wait(1.2)");
@@ -497,6 +525,35 @@ public sealed class CommandTemplateTests
         await executor.ExecuteAsync(program, sink, TestContext.Current.CancellationToken);
 
         Assert.Equal(["/echo before", "/echo after"], sink.Commands);
+        var delay = Assert.Single(delays);
+        Assert.InRange(delay.TotalSeconds, 1.199, 1.201);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_LoopStatement_RepeatsUntilCancelled()
+    {
+        var program = ScriptParser.Parse("""
+            loop {
+                /echo tick
+                wait(1.2)
+            }
+            """);
+        var sink = new RecordingCommandSink();
+        var delays = new List<TimeSpan>();
+        using var cancellationTokenSource = new CancellationTokenSource();
+        var executor = new ScriptExecutor(
+            NullResolver.Instance,
+            new Random(0),
+            (duration, _) =>
+            {
+                delays.Add(duration);
+                cancellationTokenSource.Cancel();
+                return Task.CompletedTask;
+            });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => executor.ExecuteAsync(program, sink, cancellationTokenSource.Token));
+
+        Assert.Equal(["/echo tick"], sink.Commands);
         var delay = Assert.Single(delays);
         Assert.InRange(delay.TotalSeconds, 1.199, 1.201);
     }
