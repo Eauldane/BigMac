@@ -7,6 +7,8 @@ using BigMac.Scripting;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using System.Numerics;
+using Dalamud.Interface;
+using Dalamud.Utility;
 using ElezenTools.UI;
 
 namespace BigMac.UI;
@@ -53,6 +55,21 @@ public sealed class BigMacWindow : Window
         _hotbarService = hotbarService;
         _openHelp = openHelp;
 
+        this.TitleBarButtons =
+        [
+            new()
+            {
+                Icon = FontAwesomeIcon.GlobeEurope,
+                ShowTooltip = () => ImGui.SetTooltip("Discord"),
+                Click = (btn) => Util.OpenLink("https://discord.gg/elznmods")
+            },
+            new()
+            {
+                Icon = FontAwesomeIcon.Heart,
+                ShowTooltip = () => ImGui.SetTooltip("Patreon"),
+                Click = (btn) => Util.OpenLink("https://patreon.com/elznmods")
+            }
+        ];
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(860, 520),

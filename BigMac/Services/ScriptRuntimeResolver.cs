@@ -164,7 +164,7 @@ public sealed class ScriptRuntimeResolver : IScriptRuntimeResolver
             return true;
         }
 
-        return target is IBattleNpc battleNpc && battleNpc.BattleNpcKind == BattleNpcSubKind.Enemy;
+        return target is IBattleNpc battleNpc && battleNpc.BattleNpcKind == BattleNpcSubKind.Combatant;
     }
 
     public bool TryEvaluateFunction(string name, IReadOnlyList<ExpressionValue> arguments, out ExpressionValue value)
