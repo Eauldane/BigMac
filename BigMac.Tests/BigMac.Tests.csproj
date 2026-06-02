@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\BigMac\Services\MacroDuplicatePlanner.cs" Link="Services\MacroDuplicatePlanner.cs" />
     <Compile Include="..\BigMac\Scripting\Ast.cs" Link="Scripting\Ast.cs" />
     <Compile Include="..\BigMac\Scripting\CommandTemplate.cs" Link="Scripting\CommandTemplate.cs" />
     <Compile Include="..\BigMac\Scripting\ExpressionRuntime.cs" Link="Scripting\ExpressionRuntime.cs" />

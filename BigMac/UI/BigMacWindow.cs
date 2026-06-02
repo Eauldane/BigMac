@@ -194,6 +194,12 @@ public sealed class BigMacWindow : Window
         if (_selectedMacroId.HasValue)
         {
             ImGui.SameLine();
+            if (ImGui.Button("Duplicate Macro"))
+            {
+                DuplicateSelectedMacro();
+            }
+
+            ImGui.SameLine();
             if (ImGui.Button("Delete Macro"))
             {
                 DeleteSelectedMacro();
@@ -282,6 +288,41 @@ public sealed class BigMacWindow : Window
         _macroRegistry.Reload();
         StartNewMacro();
         SetStatus("Deleted macro.", isError: false);
+    }
+
+    private void DuplicateSelectedMacro()
+    {
+        if (!_selectedMacroId.HasValue)
+        {
+            return;
+        }
+
+        _selectedMacroId = null;
+        _name = MacroDuplicatePlanner.CreateDuplicateName(_name, _config.Macros.Select(static macro => macro.Name));
+        _command = BuildDuplicateCommand(_command);
+
+        var foundMacroLocation = MacroDuplicatePlanner.TryFindDuplicateMacroLocation(
+            (int)_macroStorageKind,
+            _macroSlot,
+            _config.Macros.Select(static macro =>
+            {
+                var location = macro.MacroLocation.Sanitize();
+                return ((int)location.StorageKind, location.Slot);
+            }),
+            out var duplicateBookId,
+            out var duplicateSlot);
+
+        _macroStorageKind = (MacroStorageKind)duplicateBookId;
+        _macroSlot = duplicateSlot;
+
+        RefreshPreview();
+        if (foundMacroLocation)
+        {
+            SetStatus("Loaded duplicate as a new draft.", isError: false);
+            return;
+        }
+
+        SetStatus("Loaded duplicate as a new draft. Choose an unused macro book and slot before saving.", isError: true);
     }
 
     private bool TryBuildDraft(SavedMacroDefinition? previousMacro, out SavedMacroDefinition macro, out string error)
@@ -455,6 +496,21 @@ public sealed class BigMacWindow : Window
         ImGui.TextUnformatted(label);
         ImGui.SameLine(LabelColumnWidth);
         ImGui.SetNextItemWidth(-1f);
+    }
+
+    private string BuildDuplicateCommand(string sourceCommand)
+    {
+        string? lastCandidate = null;
+        foreach (var candidate in MacroDuplicatePlanner.EnumerateCommandCandidates(sourceCommand, MaxCommandLength).Take(2048))
+        {
+            lastCandidate = candidate;
+            if (_macroRegistry.TryValidateCommand(candidate, macroId: null, out var normalizedCommand, out _))
+            {
+                return normalizedCommand;
+            }
+        }
+
+        return lastCandidate ?? "/newmacro2";
     }
 
     private bool TryValidateMacroLocation(MacroGameLocation macroLocation, SavedMacroDefinition? previousMacro, out string error)
