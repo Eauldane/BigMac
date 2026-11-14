@@ -1,13 +1,17 @@
 ﻿<Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <AssemblyName>BigMac</AssemblyName>
-    <Version>1.1.1.0</Version>
+    <Version>1.2.0.0</Version>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PackageProjectUrl>https://github.com/Eauldane/BigMac/</PackageProjectUrl>
   </PropertyGroup>
   
   <ItemGroup>
-    <PackageReference Include="ElezenTools" Version="15.0.1" />
+    <PackageReference Include="ElezenTools" Version="15.56.0" />
     <PackageReference Update="DotNet.ReproducibleBuilds" Version="2.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="ThirdParty/TextEdit/LICENSE" CopyToOutputDirectory="PreserveNewest" TargetPath="ImGuiColorTextEditNet.LICENSE" />
   </ItemGroup>
 </Project>

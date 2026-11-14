@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -28,9 +29,9 @@ public sealed class ScriptExecutor
         _delayAsync = delayAsync ?? Task.Delay;
     }
 
-    public async Task ExecuteAsync(ScriptProgram program, ICommandSink commandSink, CancellationToken cancellationToken = default)
+    public async Task ExecuteAsync(ScriptProgram program, ICommandSink commandSink, CancellationToken cancellationToken = default, string arguments = "")
     {
-        var scope = new ScopedRuntimeResolver(_runtimeResolver);
+        var scope = new ScopedRuntimeResolver(_runtimeResolver, MacroArguments.Parse(arguments));
         foreach (var statement in program.Statements)
         {
             await ExecuteStatementAsync(statement, commandSink, scope, cancellationToken).ConfigureAwait(false);
@@ -76,6 +77,25 @@ public sealed class ScriptExecutor
                     cancellationToken.ThrowIfCancellationRequested();
                     await ExecuteBranchAsync(loop.Block, commandSink, scope, cancellationToken).ConfigureAwait(false);
                 }
+            case RepeatStatement repeat:
+            {
+                var value = ExpressionEvaluator.Evaluate(repeat.Count, _random, scope, scope);
+                if (value is not NumberExpressionValue count || count.Value < 0)
+                {
+                    throw new InvalidOperationException($"repeat(...) requires a non-negative whole-number count (line {repeat.Line}, column {repeat.Column}).");
+                }
+
+                for (var iteration = 0; iteration < count.Value; iteration++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await ExecuteBranchAsync(repeat.Block, commandSink, scope, cancellationToken).ConfigureAwait(false);
+                    // Empty or synchronous bodies must still give cancellation and the UI time to run.
+                    await Task.Yield();
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                break;
+            }
         }
     }
 
@@ -117,6 +137,7 @@ public static class ScriptPreviewTreeBuilder
             ChanceStatement chance => BuildChance(chance),
             IfStatement conditional => BuildConditional(conditional),
             LoopStatement loop => BuildLoop(loop),
+            RepeatStatement repeat => new ScriptPreviewNode($"repeat ({ExpressionDescriber.Describe(repeat.Count)})", [BuildBranch("body", repeat.Block)]),
             _ => new ScriptPreviewNode("unknown", []),
         };
 
@@ -169,17 +190,19 @@ public static class ScriptPreviewTreeBuilder
 internal sealed class ScopedRuntimeResolver : IScriptRuntimeResolver
 {
     private readonly IScriptRuntimeResolver _runtimeResolver;
+    private readonly MacroArguments _arguments;
     private readonly ScopedRuntimeResolver? _parent;
     private readonly Dictionary<string, ExpressionValue> _locals = new(StringComparer.OrdinalIgnoreCase);
 
-    public ScopedRuntimeResolver(IScriptRuntimeResolver runtimeResolver, ScopedRuntimeResolver? parent = null)
+    public ScopedRuntimeResolver(IScriptRuntimeResolver runtimeResolver, MacroArguments arguments, ScopedRuntimeResolver? parent = null)
     {
         _runtimeResolver = runtimeResolver;
+        _arguments = arguments;
         _parent = parent;
     }
 
     public ScopedRuntimeResolver CreateChild()
-        => new(_runtimeResolver, this);
+        => new(_runtimeResolver, _arguments, this);
 
     public void SetValue(string name, ExpressionValue value)
     {
@@ -192,10 +215,12 @@ internal sealed class ScopedRuntimeResolver : IScriptRuntimeResolver
     public bool TryResolveVariable(string name, out ExpressionValue value)
         => _locals.TryGetValue(name, out value!)
         || (_parent?.TryResolveVariable(name, out value!) ?? false)
+        || _arguments.TryResolveVariable(name, out value!)
         || _runtimeResolver.TryResolveVariable(name, out value!);
 
     public bool TryEvaluateFunction(string name, IReadOnlyList<ExpressionValue> arguments, out ExpressionValue value)
-        => _runtimeResolver.TryEvaluateFunction(name, arguments, out value);
+        => _arguments.TryEvaluateFunction(name, arguments, out value)
+        || _runtimeResolver.TryEvaluateFunction(name, arguments, out value);
 
     public bool IsActionUnlocked(string actionName)
         => _runtimeResolver.IsActionUnlocked(actionName);
@@ -217,4 +242,84 @@ internal sealed class ScopedRuntimeResolver : IScriptRuntimeResolver
 
     public bool IsTargetEnemy()
         => _runtimeResolver.IsTargetEnemy();
+}
+
+internal sealed record MacroArguments(string RawText, IReadOnlyList<string> Items)
+{
+    public static MacroArguments Parse(string text)
+    {
+        var items = new List<string>();
+        var token = new StringBuilder();
+        var quoted = false;
+        var started = false;
+        for (var index = 0; index < text.Length; index++)
+        {
+            var current = text[index];
+            if (quoted && current == '\\' && index + 1 < text.Length && text[index + 1] is '"' or '\\')
+            {
+                token.Append(text[++index]);
+                continue;
+            }
+
+            if (current == '"')
+            {
+                quoted = !quoted;
+                started = true;
+            }
+            else if (!quoted && char.IsWhiteSpace(current))
+            {
+                if (started)
+                {
+                    items.Add(token.ToString());
+                    token.Clear();
+                    started = false;
+                }
+            }
+            else
+            {
+                token.Append(current);
+                started = true;
+            }
+        }
+
+        if (quoted)
+        {
+            throw new InvalidOperationException("Macro arguments contain an unclosed double quote.");
+        }
+
+        if (started)
+        {
+            items.Add(token.ToString());
+        }
+
+        return new MacroArguments(text, items);
+    }
+
+    public bool TryResolveVariable(string name, out ExpressionValue value)
+    {
+        value = name.ToLowerInvariant() switch
+        {
+            "args" => new StringExpressionValue(RawText),
+            "arg_count" => new NumberExpressionValue(Items.Count),
+            _ => null!,
+        };
+        return value is not null;
+    }
+
+    public bool TryEvaluateFunction(string name, IReadOnlyList<ExpressionValue> arguments, out ExpressionValue value)
+    {
+        value = null!;
+        if (!string.Equals(name, "arg", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (arguments.Count != 1 || arguments[0] is not NumberExpressionValue index || index.Value < 1)
+        {
+            throw new InvalidOperationException("arg(...) requires a single positive whole-number index (starting at 1).");
+        }
+
+        value = new StringExpressionValue(index.Value <= Items.Count ? Items[index.Value - 1] : string.Empty);
+        return true;
+    }
 }

@@ -63,6 +63,11 @@ public sealed class ScriptParser
             return ParseLoopStatement();
         }
 
+        if (Match(TokenKind.Repeat))
+        {
+            return ParseRepeatStatement();
+        }
+
         if (Match(TokenKind.CommandLine, out var commandToken))
         {
             return new CommandStatement(CommandTemplate.Parse(commandToken.Lexeme, commandToken.Line, commandToken.Column));
@@ -161,6 +166,23 @@ public sealed class ScriptParser
 
     private LoopStatement ParseLoopStatement()
         => new(ParseBlock());
+
+    private RepeatStatement ParseRepeatStatement()
+    {
+        var token = Consume(TokenKind.RepeatText, "Expected repeat count.");
+        ExpressionNode count;
+        try
+        {
+            count = ExpressionParser.Parse(token.Lexeme);
+            ScriptConditionEvaluator.Validate(count);
+        }
+        catch (Exception exception) when (exception is ExpressionParseException or InvalidOperationException)
+        {
+            throw new ScriptParseException(exception.Message, token.Line, token.Column);
+        }
+
+        return new RepeatStatement(count, ParseBlock(), token.Line, token.Column);
+    }
 
     private ChanceCondition ParseChanceCondition()
     {
@@ -373,6 +395,9 @@ public sealed class ScriptParser
                     break;
                 case LoopStatement loop:
                     ValidateScope(loop.Block.Statements);
+                    break;
+                case RepeatStatement repeat:
+                    ValidateScope(repeat.Block.Statements);
                     break;
             }
         }

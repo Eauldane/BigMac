@@ -431,7 +431,12 @@ public static class ExpressionParser
 
             if (Match(TokenKind.Number, out var numberToken))
             {
-                return new NumberLiteralExpression(int.Parse(numberToken.Lexeme, CultureInfo.InvariantCulture));
+                if (!int.TryParse(numberToken.Lexeme, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+                {
+                    throw new ExpressionParseException($"Number '{numberToken.Lexeme}' is outside the supported whole-number range.");
+                }
+
+                return new NumberLiteralExpression(number);
             }
 
             if (Match(TokenKind.LeftBracket))

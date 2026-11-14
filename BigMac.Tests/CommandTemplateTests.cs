@@ -580,6 +580,298 @@ public sealed class CommandTemplateTests
         Assert.Contains("built-in variable name", exception.Message);
     }
 
+    [Theory]
+    [InlineData("", "0|||")]
+    [InlineData("   \t", "0|   \t||")]
+    [InlineData("hello world", "2|hello world|hello|world")]
+    [InlineData("\"hello world\" <t>", "2|\"hello world\" <t>|hello world|<t>")]
+    [InlineData("\"\" second", "2|\"\" second||second")]
+    [InlineData("  first\tsecond  ", "2|  first\tsecond  |first|second")]
+    [InlineData("don't panic", "2|don't panic|don't|panic")]
+    [InlineData("pre\"two words\"post tail", "2|pre\"two words\"post tail|pretwo wordspost|tail")]
+    public async Task ScriptExecutor_Arguments_AreAvailableInExpressions(string arguments, string expected)
+    {
+        var program = ScriptParser.Parse("/echo ${arg_count}|${args}|${arg(1)}|${arg(2)}");
+        var sink = new RecordingCommandSink();
+
+        await new ScriptExecutor(NullResolver.Instance).ExecuteAsync(program, sink, TestContext.Current.CancellationToken, arguments);
+
+        Assert.Equal(["/echo " + expected], sink.Commands);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Arguments_UnescapeOnlyQuotesAndBackslashesInsideQuotes()
+    {
+        var program = ScriptParser.Parse("/echo ${arg(1)}|${arg(2)}");
+        var sink = new RecordingCommandSink();
+
+        await new ScriptExecutor(NullResolver.Instance).ExecuteAsync(program, sink, TestContext.Current.CancellationToken,
+            arguments: "\"say \\\"hi\\\" at C:\\\\temp\\n\" C:\\temp");
+
+        Assert.Equal(["/echo say \"hi\" at C:\\temp\\n|C:\\temp"], sink.Commands);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Arguments_WorkInConditionsBindingsAndNestedScopes()
+    {
+        var program = ScriptParser.Parse("""
+            let recipient = default(arg(2), "friend")
+            if (arg_count == 1 && ARG(1) == "hello") {
+                /echo ${recipient}: ${ARGS}
+                /echo default(arg(3), "missing")
+            }
+            """);
+        var sink = new RecordingCommandSink();
+
+        await new ScriptExecutor(NullResolver.Instance).ExecuteAsync(program, sink, TestContext.Current.CancellationToken, arguments: "hello");
+
+        Assert.Equal(["/echo friend: hello", "/echo missing"], sink.Commands);
+    }
+
+    [Theory]
+    [InlineData("args")]
+    [InlineData("ARG_COUNT")]
+    public void ScriptParser_Arguments_CannotBeRebound(string name)
+    {
+        var exception = Assert.Throws<ScriptParseException>(() => ScriptParser.Parse($"let {name} = 1"));
+        Assert.Contains("built-in variable name", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("arg()")]
+    [InlineData("arg(1, 2)")]
+    [InlineData("arg(0)")]
+    [InlineData("arg(\"1\")")]
+    [InlineData("arg(true)")]
+    public async Task ScriptExecutor_Arguments_RejectInvalidIndexes(string expression)
+    {
+        var program = ScriptParser.Parse("/echo ${" + expression + "}");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ScriptExecutor(NullResolver.Instance).ExecuteAsync(program, new RecordingCommandSink(), TestContext.Current.CancellationToken));
+
+        Assert.Contains("positive whole-number index", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("arg()")]
+    [InlineData("arg(1, 2)")]
+    public void ScriptParser_Arguments_ValidatesConditionArity(string expression)
+        => Assert.Throws<ScriptParseException>(() => ScriptParser.Parse($"if ({expression}) {{ /echo hello\n }}"));
+
+    [Fact]
+    public async Task ScriptExecutor_Arguments_RejectUnclosedQuotesBeforeSendingCommands()
+    {
+        var sink = new RecordingCommandSink();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ScriptExecutor(NullResolver.Instance).ExecuteAsync(ScriptParser.Parse("/echo start"), sink, TestContext.Current.CancellationToken,
+                arguments: "hello \"world"));
+
+        Assert.Contains("unclosed double quote", exception.Message);
+        Assert.Empty(sink.Commands);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Arguments_AreIsolatedAcrossOverlappingExecutions()
+    {
+        var enteredWait = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executor = new ScriptExecutor(NullResolver.Instance, delayAsync: (_, _) =>
+        {
+            enteredWait.TrySetResult();
+            return resume.Task;
+        });
+        var firstSink = new RecordingCommandSink();
+        var secondSink = new RecordingCommandSink();
+        var first = executor.ExecuteAsync(ScriptParser.Parse("wait(1)\n/echo ${arg(1)}"), firstSink, TestContext.Current.CancellationToken, arguments: "first");
+        await enteredWait.Task;
+        try
+        {
+            await executor.ExecuteAsync(ScriptParser.Parse("/echo ${arg(1)}"), secondSink, TestContext.Current.CancellationToken, arguments: "second");
+        }
+        finally
+        {
+            resume.TrySetResult();
+        }
+        await first;
+
+        Assert.Equal(["/echo first"], firstSink.Commands);
+        Assert.Equal(["/echo second"], secondSink.Commands);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Arguments_AreTreatedAsTextRatherThanExpressions()
+    {
+        var sink = new RecordingCommandSink();
+        await new ScriptExecutor(NullResolver.Instance).ExecuteAsync(ScriptParser.Parse("/echo ${arg(1)}"), sink, TestContext.Current.CancellationToken,
+            arguments: "${unknown_variable}");
+        Assert.Equal(["/echo ${unknown_variable}"], sink.Commands);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task ScriptExecutor_Repeat_RunsExactCountAndContinues(int count)
+    {
+        var program = ScriptParser.Parse($$"""
+            /echo before
+            repeat({{count}}) {
+                let message = "tick"
+                /echo ${message}
+            }
+            /echo after
+            """);
+        var sink = new RecordingCommandSink();
+
+        await new ScriptExecutor(NullResolver.Instance).ExecuteAsync(program, sink, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "/echo before" }.Concat(Enumerable.Repeat("/echo tick", count)).Append("/echo after"), sink.Commands);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Repeat_SupportsNestedExpressionsBlocksAndArguments()
+    {
+        var program = ScriptParser.Parse("""
+            let count = choose(contains("(", "("), min(2, 3), 0)
+            repeat(count) {
+                repeat(arg_count) {
+                    if (arg(1) == "hello") {
+                        chance (100) {
+                            /echo ${arg(2)}
+                        }
+                    }
+                }
+            }
+            """);
+        var sink = new RecordingCommandSink();
+
+        await new ScriptExecutor(NullResolver.Instance).ExecuteAsync(program, sink,
+            TestContext.Current.CancellationToken, "hello world");
+
+        Assert.Equal(Enumerable.Repeat("/echo world", 4), sink.Commands);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Repeat_EvaluatesCountOnceOnEntry()
+    {
+        var resolver = new RecordingConditionResolver();
+        resolver.Variables["count"] = new NumberExpressionValue(3);
+        var delays = 0;
+        var executor = new ScriptExecutor(resolver, delayAsync: (_, _) =>
+        {
+            delays++;
+            resolver.Variables["count"] = new NumberExpressionValue(0);
+            return Task.CompletedTask;
+        });
+
+        await executor.ExecuteAsync(ScriptParser.Parse("repeat(count) { wait(1) }"), new RecordingCommandSink(),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, delays);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("\"3\"")]
+    [InlineData("[3]")]
+    public async Task ScriptExecutor_Repeat_RejectsNonNumericCounts(string count)
+    {
+        var sink = new RecordingCommandSink();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ScriptExecutor(NullResolver.Instance).ExecuteAsync(ScriptParser.Parse($"repeat({count}) {{\n/echo tick\n}}"),
+                sink, TestContext.Current.CancellationToken));
+
+        Assert.Contains("non-negative whole-number count", exception.Message);
+        Assert.Contains("line 1", exception.Message);
+        Assert.Empty(sink.Commands);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Repeat_RejectsNegativeComputedCounts()
+    {
+        var resolver = new RecordingConditionResolver();
+        resolver.Variables["count"] = new NumberExpressionValue(-1);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ScriptExecutor(resolver).ExecuteAsync(ScriptParser.Parse("repeat(count) {}"),
+                new RecordingCommandSink(), TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("repeat {}")]
+    [InlineData("repeat() {}")]
+    [InlineData("repeat(1.5) {}")]
+    [InlineData("repeat(2147483648) {}")]
+    [InlineData("repeat(2 {}")]
+    [InlineData("repeat(2)")]
+    [InlineData("repeat(2) {")]
+    public void ScriptParser_Repeat_RejectsMalformedStatements(string source)
+        => Assert.Throws<ScriptParseException>(() => ScriptParser.Parse(source));
+
+    [Fact]
+    public void ScriptParser_Repeat_ValidatesLocalBindings()
+    {
+        Assert.Throws<ScriptParseException>(() => ScriptParser.Parse("repeat(2) {\nlet args = 1\n}"));
+        Assert.Throws<ScriptParseException>(() => ScriptParser.Parse("repeat(2) {\nlet x = 1\nlet x = 2\n}"));
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Repeat_BodyBindingsDoNotEscape()
+    {
+        var executor = new ScriptExecutor(NullResolver.Instance);
+        var program = ScriptParser.Parse("repeat(1) {\nlet message = \"local\"\n}\n/echo ${message}");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            executor.ExecuteAsync(program, new RecordingCommandSink(), TestContext.Current.CancellationToken));
+
+        Assert.Contains("Unknown variable 'message'", exception.Message);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Repeat_CancellationDuringWaitStopsFollowingCommands()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var sink = new RecordingCommandSink();
+        var executor = new ScriptExecutor(NullResolver.Instance, delayAsync: (_, token) =>
+        {
+            cancellation.Cancel();
+            return Task.FromCanceled(token);
+        });
+        var program = ScriptParser.Parse("repeat(3) {\n/echo tick\nwait(1)\n}\n/echo done");
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => executor.ExecuteAsync(program, sink, cancellation.Token));
+
+        Assert.Equal(["/echo tick"], sink.Commands);
+    }
+
+    [Fact]
+    public async Task ScriptExecutor_Repeat_EmptyBodyYieldsAndCanBeCancelled()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var execution = new ScriptExecutor(NullResolver.Instance).ExecuteAsync(
+            ScriptParser.Parse("repeat(2147483647) {}"), new RecordingCommandSink(), cancellation.Token);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => execution);
+    }
+
+    [Theory]
+    [InlineData("repeat(2) {}")]
+    [InlineData("if (true) { repeat(2) {} }")]
+    [InlineData("chance (0) {} else { repeat(2) {} }")]
+    public void ScriptStructureInspector_Repeat_IsClassifiedAsLooping(string source)
+        => Assert.True(ScriptStructureInspector.ContainsLoop(ScriptParser.Parse(source)));
+
+    [Fact]
+    public void ScriptPreview_Repeat_IncludesCountAndBody()
+    {
+        var preview = Assert.Single(ScriptPreviewTreeBuilder.Build(ScriptParser.Parse("repeat(3) {\n/echo tick\n}")));
+
+        Assert.Contains("repeat", preview.Label);
+        Assert.Contains("3", preview.Label);
+        Assert.Equal("command: /echo tick", Assert.Single(Assert.Single(preview.Children).Children).Label);
+    }
+
     private sealed class NullResolver : IScriptRuntimeResolver
     {
         public static readonly NullResolver Instance = new();

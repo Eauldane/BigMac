@@ -11,6 +11,7 @@ BigMac adds the following features:
 - Boolean logic
 - Timers
 - Loop blocks
+- Bounded repetition
 - Action availability/readiness
 - Class check
 - Random chance

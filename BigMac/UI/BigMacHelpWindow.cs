@@ -2,30 +2,22 @@ using System;
 using System.Collections.Generic;
 using BigMac.Scripting;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.ManagedFontAtlas;
+using Dalamud.Interface;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
-using Dalamud.Plugin;
 using System.Numerics;
 using ElezenTools.UI;
 
 namespace BigMac.UI;
 
-public sealed class BigMacHelpWindow : Window, IDisposable
+public sealed class BigMacHelpWindow : Window
 {
     private int _selectedSectionIndex;
-    private readonly IFontHandle _titleFont;
 
-    public BigMacHelpWindow(IDalamudPluginInterface pluginInterface)
+    public BigMacHelpWindow()
         : base("BigMac Help")
     {
-        _titleFont = pluginInterface.UiBuilder.FontAtlas.NewDelegateFontHandle(e =>
-        {
-            e.OnPreBuild(tk => tk.AddDalamudAssetFont(Dalamud.DalamudAsset.NotoSansCjkMedium, new()
-            {
-                SizePx = 24,
-                GlyphRanges = [0x20, 0x7E, 0],
-            }));
-        });
+        ElezenFonts.Get(24);
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -33,9 +25,6 @@ public sealed class BigMacHelpWindow : Window, IDisposable
             MaximumSize = new Vector2(1800, 1400),
         };
     }
-
-    public void Dispose()
-        => _titleFont.Dispose();
 
     public override void Draw()
     {
@@ -48,7 +37,7 @@ public sealed class BigMacHelpWindow : Window, IDisposable
 
         _selectedSectionIndex = Math.Clamp(_selectedSectionIndex, 0, sections.Count - 1);
 
-        var sidebarWidth = 240f;
+        var sidebarWidth = 240f * ImGuiHelpers.GlobalScale;
         ImGui.BeginChild("##bigmac-help-sidebar", new Vector2(sidebarWidth, 0), true);
         DrawSidebar(sections);
         ImGui.EndChild();
@@ -62,30 +51,29 @@ public sealed class BigMacHelpWindow : Window, IDisposable
 
     private void DrawSidebar(IReadOnlyList<ScriptHelpSection> sections)
     {
-        ImGui.TextDisabled("Topics");
-        ImGui.Separator();
-        ImGui.Spacing();
+        ModernSection.Header(FontAwesomeIcon.Book, "Scripting guide");
+        ModernSidebar.DrawSeparator();
 
         for (var index = 0; index < sections.Count; index++)
         {
             var section = sections[index];
-            var itemWidth = Math.Max(1f, ImGui.GetContentRegionAvail().X);
-            if (ImGui.Selectable(
-                $"{section.Title}##topic-{index}",
-                _selectedSectionIndex == index,
-                ImGuiSelectableFlags.None,
-                new Vector2(itemWidth, 0f)))
+            ImGui.PushID(index);
+            if (ModernSidebar.DrawRow(FontAwesomeIcon.Book, section.Title, _selectedSectionIndex == index))
             {
                 _selectedSectionIndex = index;
             }
+            ImGui.PopID();
         }
     }
 
     private void DrawSection(int sectionIndex, ScriptHelpSection section)
     {
         ImGui.TextDisabled("Reference");
-        ElezenImgui.FontText(section.Title, _titleFont);
-        ImGui.Separator();
+        using (ElezenFonts.Push(24))
+        {
+            ElezenImgui.ColouredText(section.Title, BigMacTheme.Palette.Accent);
+        }
+        ModernSection.SoftSeparator();
         ImGui.Spacing();
         ElezenImgui.WrappedText(section.Summary);
         ImGui.Spacing();
@@ -95,7 +83,7 @@ public sealed class BigMacHelpWindow : Window, IDisposable
             DrawEntry(sectionIndex, entryIndex, section.Entries[entryIndex]);
             if (entryIndex < section.Entries.Count - 1)
             {
-                ImGui.Separator();
+                ModernSection.SoftSeparator();
                 ImGui.Spacing();
             }
         }
@@ -106,7 +94,7 @@ public sealed class BigMacHelpWindow : Window, IDisposable
     private void DrawEntry(int sectionIndex, int entryIndex, ScriptHelpEntry entry)
     {
         ImGui.PushID($"{sectionIndex}-{entryIndex}");
-        ElezenImgui.FontText(entry.Name, _titleFont);
+        ModernSection.Header(FontAwesomeIcon.Code, entry.Name);
         ElezenImgui.WrappedText(entry.Description);
 
         if (!string.IsNullOrWhiteSpace(entry.Syntax))
@@ -128,8 +116,13 @@ public sealed class BigMacHelpWindow : Window, IDisposable
     {
         ImGui.TextDisabled(label);
         var lineCount = CountLines(text);
-        var height = Math.Max(42f, lineCount * ImGui.GetTextLineHeightWithSpacing() + 10f);
-        ImGui.BeginChild($"##{label}", new Vector2(-1, height), true);
+        var padding = ImGui.GetStyle().WindowPadding;
+        var height = Math.Max(42f * ImGuiHelpers.GlobalScale,
+            lineCount * ImGui.GetTextLineHeightWithSpacing() + padding.Y * 2);
+        if (ImGui.CalcTextSize(text).X > ImGui.GetContentRegionAvail().X - padding.X * 2)
+            height += ImGui.GetStyle().ScrollbarSize;
+        ImGui.BeginChild($"##{label}", new Vector2(0, height), true,
+            ImGuiWindowFlags.HorizontalScrollbar);
         ImGui.TextUnformatted(text);
         ImGui.EndChild();
     }

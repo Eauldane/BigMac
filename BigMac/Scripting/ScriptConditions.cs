@@ -175,7 +175,8 @@ public static class ScriptConditionEvaluator
             "job" or
             "has_status" or
             "have_status" or
-            "target_has_status" => 1,
+            "target_has_status" or
+            "arg" => 1,
             "target_is_enemy" or "distance_to_target" => 0,
             _ => -1,
         };

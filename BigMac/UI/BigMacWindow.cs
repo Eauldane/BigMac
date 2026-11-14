@@ -8,6 +8,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using System.Numerics;
 using Dalamud.Interface;
+using Dalamud.Interface.Utility;
 using Dalamud.Utility;
 using ElezenTools.UI;
 
@@ -26,6 +27,7 @@ public sealed class BigMacWindow : Window
     private readonly MacroRegistry _macroRegistry;
     private readonly MacroHotbarService _hotbarService;
     private readonly Action _openHelp;
+    private readonly ScriptEditor _scriptEditor = new();
 
     private Guid? _selectedMacroId;
     private string _name = "New Macro";
@@ -42,12 +44,14 @@ public sealed class BigMacWindow : Window
     private string? _statusMessage;
     private bool _statusIsError;
     private bool _isPvpDisabled;
+    private float _settingsContentHeight;
 
     public BigMacWindow(
         ConfigService config,
         MacroRegistry macroRegistry,
         MacroHotbarService hotbarService,
-        Action openHelp)
+        Action openHelp,
+        Action openSupport)
         : base("BigMac")
     {
         _config = config;
@@ -66,8 +70,8 @@ public sealed class BigMacWindow : Window
             new()
             {
                 Icon = FontAwesomeIcon.Heart,
-                ShowTooltip = () => ImGui.SetTooltip("Patreon"),
-                Click = (btn) => Util.OpenLink("https://patreon.com/elznmods")
+                ShowTooltip = () => ImGui.SetTooltip("Support BigMac"),
+                Click = (btn) => openSupport()
             }
         ];
         SizeConstraints = new WindowSizeConstraints
@@ -104,31 +108,40 @@ public sealed class BigMacWindow : Window
 
     private void DrawMacroList()
     {
-        var sidebarWidth = 240f;
+        var sidebarWidth = 240f * ImGuiHelpers.GlobalScale;
         var footerHeight = ImGui.GetFrameHeightWithSpacing() + ImGui.GetStyle().ItemSpacing.Y;
 
         ImGui.BeginGroup();
         ImGui.BeginChild("##bigmac-macro-list", new Vector2(sidebarWidth, -footerHeight), true);
-        if (ImGui.Button("New Macro", new Vector2(-1, 0)))
+        ModernSection.Header(FontAwesomeIcon.Scroll, "BigMac");
+        if (BigMacUi.IconButton(FontAwesomeIcon.Plus, "New Macro", ImGui.GetContentRegionAvail().X))
         {
             StartNewMacro();
         }
 
-        ImGui.Separator();
+        ModernSidebar.DrawSeparator();
         ImGui.TextDisabled("Saved macros");
 
         foreach (var macro in _config.Macros)
         {
             var selected = _selectedMacroId == macro.Id;
-            if (ImGui.Selectable($"{macro.Name} ({macro.Command})##{macro.Id}", selected))
+            ImGui.PushID(macro.Id.ToString());
+            var rowStart = ImGui.GetCursorScreenPos();
+            ImGui.PushClipRect(rowStart, rowStart + new Vector2(ImGui.GetContentRegionAvail().X, 34f * ImGuiHelpers.GlobalScale), true);
+            if (ModernSidebar.DrawRow(FontAwesomeIcon.Scroll, macro.Name, selected))
             {
                 LoadMacro(macro);
             }
+            ImGui.PopClipRect();
+            ElezenImgui.AttachTooltip($"{macro.Name}\n{macro.Command}");
+            ImGui.PopID();
         }
 
         ImGui.EndChild();
 
-        if (ImGui.Button("Help", new Vector2(sidebarWidth, 0)))
+        var sidebarPadding = ImGui.GetStyle().WindowPadding.X;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + sidebarPadding);
+        if (BigMacUi.IconButton(FontAwesomeIcon.Book, "Help", sidebarWidth - sidebarPadding * 2))
         {
             _openHelp();
         }
@@ -150,8 +163,17 @@ public sealed class BigMacWindow : Window
 
     private void DrawEditor()
     {
-        ImGui.BeginChild("##bigmac-editor", new Vector2(0, 0), false);
+        ImGui.BeginChild("##bigmac-editor", new Vector2(0, 0), false,
+            ImGuiWindowFlags.AlwaysUseWindowPadding);
 
+        var scale = ImGuiHelpers.GlobalScale;
+        var spacing = ImGui.GetStyle().ItemSpacing.Y;
+        // Keep configuration scrollable at smaller sizes so it cannot consume the script/footer area.
+        var preferredSettingsHeight = _settingsContentHeight > 0 ? _settingsContentHeight
+            : ImGui.GetFrameHeightWithSpacing() * 8 + 24f * scale;
+        var settingsHeight = MathF.Min(ImGui.GetContentRegionAvail().Y * 0.36f, preferredSettingsHeight);
+        ImGui.BeginChild("##bigmac-settings", new Vector2(0, settingsHeight), false);
+        ModernSection.Header(FontAwesomeIcon.Edit, "Macro editor");
         var changed = false;
         DrawFieldLabel("Name");
         changed |= ImGui.InputText("##name", ref _name, MaxNameLength);
@@ -161,16 +183,23 @@ public sealed class BigMacWindow : Window
 
         DrawFieldLabel("Dangerous Commands");
         changed |= ImGui.Checkbox("##allow-dangerous-commands", ref _allowDangerousCommands);
-        ImGui.SameLine();
         ElezenImgui.DrawHelpText("Enabling this option allows BigMac to send chat messages. Badly written macros could expose your mod usage!");
 
         DrawMacroSlotEditor();
         DrawHotbarEditor();
-        
+        _settingsContentHeight = ImGui.GetCursorPosY();
+        ImGui.EndChild();
 
-        ImGui.TextUnformatted("Script");
-        var scriptHeight = MathF.Max(220f, ImGui.GetContentRegionAvail().Y * 0.45f);
-        changed |= ImGui.InputTextMultiline("##bigmac-script", ref _script, MaxScriptLength, new Vector2(-1, scriptHeight));
+        ModernSection.Header(FontAwesomeIcon.Code, "Script");
+        var actionRows = CountActionRows(ImGui.GetContentRegionAvail().X);
+        var statusHeight = ImGui.GetTextLineHeightWithSpacing() * 2 + ImGui.GetStyle().WindowPadding.Y * 2;
+        var drilldownHeaderHeight = MathF.Max(ImGui.GetTextLineHeight(), ElezenImgui.GetIconSize(FontAwesomeIcon.List).Y)
+            + 7f * scale + spacing;
+        var reservedHeight = actionRows * ImGui.GetFrameHeightWithSpacing() + statusHeight
+            + drilldownHeaderHeight + spacing * 6;
+        // Share the remaining space with Drilldown instead of enforcing a fixed script minimum.
+        var scriptHeight = MathF.Max(1f, (ImGui.GetContentRegionAvail().Y - reservedHeight) * 0.65f);
+        changed |= _scriptEditor.Draw(ref _script, new Vector2(0, scriptHeight), MaxScriptLength);
 
         if (changed)
         {
@@ -180,27 +209,27 @@ public sealed class BigMacWindow : Window
         }
 
         ImGui.Spacing();
-        if (ImGui.Button("Save Macro"))
+        if (BigMacUi.IconButton(FontAwesomeIcon.Save, "Save Macro"))
         {
             SaveMacro();
         }
 
-        ImGui.SameLine();
-        if (ImGui.Button("Add To Hotbar"))
+        ContinueActionRow(FontAwesomeIcon.Plus, "Add To Hotbar");
+        if (BigMacUi.IconButton(FontAwesomeIcon.Plus, "Add To Hotbar"))
         {
             SaveAndAddToHotbar();
         }
 
         if (_selectedMacroId.HasValue)
         {
-            ImGui.SameLine();
-            if (ImGui.Button("Duplicate Macro"))
+            ContinueActionRow(FontAwesomeIcon.Copy, "Duplicate Macro");
+            if (BigMacUi.IconButton(FontAwesomeIcon.Copy, "Duplicate Macro"))
             {
                 DuplicateSelectedMacro();
             }
 
-            ImGui.SameLine();
-            if (ImGui.Button("Delete Macro"))
+            ContinueActionRow(FontAwesomeIcon.Trash, "Delete Macro");
+            if (BigMacUi.IconButton(FontAwesomeIcon.Trash, "Delete Macro"))
             {
                 DeleteSelectedMacro();
             }
@@ -208,16 +237,25 @@ public sealed class BigMacWindow : Window
 
         if (!string.IsNullOrWhiteSpace(_statusMessage))
         {
-            var colour = _statusIsError ? new Vector4(1f, 0.45f, 0.45f, 1f) : new Vector4(0.55f, 0.9f, 0.55f, 1f);
-            ImGui.TextColored(colour, _statusMessage);
+            // Only occupy space for an actual message; cap long messages so they scroll.
+            var padding = ImGui.GetStyle().WindowPadding;
+            var wrapWidth = MathF.Max(1f, ImGui.GetContentRegionAvail().X - padding.X * 2
+                - ImGui.GetStyle().ScrollbarSize);
+            var messageHeight = MathF.Min(statusHeight,
+                ImGui.CalcTextSize(_statusMessage, false, wrapWidth).Y + padding.Y * 2);
+            ImGui.BeginChild("##bigmac-status", new Vector2(0, messageHeight), false,
+                ImGuiWindowFlags.AlwaysUseWindowPadding);
+            var colour = _statusIsError ? BigMacTheme.Palette.BooleanFalse : BigMacTheme.Palette.BooleanTrue;
+            ElezenImgui.ColouredWrappedText(_statusMessage, colour);
+            ImGui.EndChild();
         }
 
         ImGui.Spacing();
-        ImGui.TextUnformatted("Drilldown");
-        ImGui.BeginChild("##bigmac-preview", new Vector2(0, 0), true);
+        ModernSection.Header(FontAwesomeIcon.List, "Drilldown");
+        ImGui.BeginChild("##bigmac-preview", new Vector2(0, 0), true, ImGuiWindowFlags.HorizontalScrollbar);
         if (!string.IsNullOrWhiteSpace(_parseError))
         {
-            ImGui.TextColored(new Vector4(1f, 0.45f, 0.45f, 1f), _parseError);
+            ElezenImgui.ColouredWrappedText(_parseError, BigMacTheme.Palette.BooleanFalse);
         }
         else if (_previewNodes.Count == 0)
         {
@@ -387,6 +425,7 @@ public sealed class BigMacWindow : Window
         _name = macro.Name;
         _command = macro.Command;
         _script = macro.Script;
+        _scriptEditor.SetText(_script);
         _allowDangerousCommands = macro.AllowDangerousCommands;
         _macroStorageKind = macro.MacroLocation.StorageKind;
         _macroSlot = macro.MacroLocation.Sanitize().Slot;
@@ -401,6 +440,7 @@ public sealed class BigMacWindow : Window
         _name = "New Macro";
         _command = "/newmacro";
         _script = string.Empty;
+        _scriptEditor.SetText(_script);
         _allowDangerousCommands = true;
         _macroStorageKind = MacroStorageKind.Individual;
         _macroSlot = 1;
@@ -415,10 +455,12 @@ public sealed class BigMacWindow : Window
         {
             _previewNodes = [];
             _parseError = parseError!.Message;
+            _scriptEditor.SetError(parseError);
             return;
         }
 
         _parseError = null;
+        _scriptEditor.SetError(null);
         _previewNodes = ScriptPreviewTreeBuilder.Build(program);
     }
 
@@ -461,14 +503,14 @@ public sealed class BigMacWindow : Window
     {
         var storageKind = (int)_macroStorageKind;
         DrawFieldLabel("Macro Book");
-        ImGui.SetNextItemWidth(CompactFieldWidth);
+        ImGui.SetNextItemWidth(CompactFieldWidth * ImGuiHelpers.GlobalScale);
         if (ImGui.Combo("##macro-book", ref storageKind, "Individual\0Shared\0"))
         {
             _macroStorageKind = (MacroStorageKind)storageKind;
         }
 
         DrawFieldLabel("Macro Slot");
-        ImGui.SetNextItemWidth(CompactFieldWidth);
+        ImGui.SetNextItemWidth(CompactFieldWidth * ImGuiHelpers.GlobalScale);
         ImGui.InputInt("##macro-slot", ref _macroSlot);
         _macroSlot = Math.Clamp(_macroSlot, 1, 100);
         ElezenImgui.DrawHelpText("The game stores macros in individual and shared \"books\". Use this to decide where it's saved if you use the Add to Hotbar option.");
@@ -478,15 +520,14 @@ public sealed class BigMacWindow : Window
     {
         ImGui.Spacing();
         DrawFieldLabel("Hotbar");
-        ImGui.SetNextItemWidth(CompactFieldWidth);
+        ImGui.SetNextItemWidth(CompactFieldWidth * ImGuiHelpers.GlobalScale);
         ImGui.InputInt("##hotbar-number", ref _hotbarNumber);
         _hotbarNumber = Math.Clamp(_hotbarNumber, 1, 10);
 
         DrawFieldLabel("Hotbar Slot");
-        ImGui.SetNextItemWidth(CompactFieldWidth);
+        ImGui.SetNextItemWidth(CompactFieldWidth * ImGuiHelpers.GlobalScale);
         ImGui.InputInt("##hotbar-slot", ref _hotbarSlot);
         _hotbarSlot = Math.Clamp(_hotbarSlot, 1, 12);
-        ImGui.SameLine();
         ElezenImgui.DrawHelpText("When using the \"Add to Hotbar\" button, a one-line in-game macro is added, then placed on the chosen hotbar slot.");
     }
 
@@ -494,8 +535,47 @@ public sealed class BigMacWindow : Window
     {
         ImGui.AlignTextToFramePadding();
         ImGui.TextUnformatted(label);
-        ImGui.SameLine(LabelColumnWidth);
+        ImGui.SameLine(LabelColumnWidth * ImGuiHelpers.GlobalScale);
         ImGui.SetNextItemWidth(-1f);
+    }
+
+    private static void ContinueActionRow(FontAwesomeIcon icon, string label)
+    {
+        var rightEdge = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
+        var nextWidth = BigMacUi.IconButtonWidth(icon, label);
+        if (ImGui.GetItemRectMax().X + ImGui.GetStyle().ItemSpacing.X + nextWidth <= rightEdge)
+        {
+            ImGui.SameLine();
+        }
+    }
+
+    private static int CountActionRows(float availableWidth)
+    {
+        // Reserve all four actions even for a new draft: saving can select it in this frame.
+        (FontAwesomeIcon Icon, string Label)[] actions =
+        [
+            (FontAwesomeIcon.Save, "Save Macro"),
+            (FontAwesomeIcon.Plus, "Add To Hotbar"),
+            (FontAwesomeIcon.Copy, "Duplicate Macro"),
+            (FontAwesomeIcon.Trash, "Delete Macro"),
+        ];
+        var rows = 1;
+        var usedWidth = 0f;
+        foreach (var (icon, label) in actions)
+        {
+            var width = BigMacUi.IconButtonWidth(icon, label);
+            var gap = usedWidth > 0 ? ImGui.GetStyle().ItemSpacing.X : 0f;
+            if (usedWidth > 0 && usedWidth + gap + width > availableWidth)
+            {
+                rows++;
+                usedWidth = 0f;
+                gap = 0f;
+            }
+
+            usedWidth += gap + width;
+        }
+
+        return rows;
     }
 
     private string BuildDuplicateCommand(string sourceCommand)

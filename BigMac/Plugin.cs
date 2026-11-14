@@ -26,6 +26,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MacroHotbarService _macroHotbarService;
     private readonly BigMacWindow _window;
     private readonly BigMacHelpWindow _helpWindow;
+    private readonly BigMacSupportWindow _supportWindow;
     private Vector3? _lastObservedPlayerPosition;
     private bool _isPvpLocked;
 
@@ -58,10 +59,13 @@ public sealed class Plugin : IDalamudPlugin
             _builtInCommandCatalog,
             new ScriptRuntimeResolver(dataManager, clientState, objectTable, playerState, unlockState, targetManager, partyList, condition));
         _macroHotbarService = new MacroHotbarService();
-        _helpWindow = new BigMacHelpWindow(pluginInterface);
-        _window = new BigMacWindow(_config, _macroRegistry, _macroHotbarService, OpenHelpUi);
+        _helpWindow = new BigMacHelpWindow();
+        _supportWindow = new BigMacSupportWindow();
+        _window = new BigMacWindow(_config, _macroRegistry, _macroHotbarService, OpenHelpUi,
+            () => _supportWindow.Toggle());
         _windowSystem.AddWindow(_window);
         _windowSystem.AddWindow(_helpWindow);
+        _windowSystem.AddWindow(_supportWindow);
 
         if (_commandManager.Commands.ContainsKey(MainCommand))
         {
@@ -92,7 +96,6 @@ public sealed class Plugin : IDalamudPlugin
         _pluginInterface.UiBuilder.OpenMainUi -= OpenUi;
         _commandManager.RemoveHandler(MainCommand);
         _windowSystem.RemoveAllWindows();
-        _helpWindow.Dispose();
         _macroHotbarService.Dispose();
         _macroRegistry.Dispose();
         ElezenInit.Dispose();
@@ -130,6 +133,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         SyncPvpState();
         CancelLoopsOnMovement();
+        using var theme = BigMacTheme.Push();
         _windowSystem.Draw();
     }
 

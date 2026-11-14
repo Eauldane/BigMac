@@ -75,6 +75,16 @@ public sealed class ScriptLexer
                             SkipWhitespaceAndComments();
                             _tokens.Add(ReadWaitText());
                         }
+                        else if (keyword.Kind == TokenKind.Repeat)
+                        {
+                            SkipWhitespaceAndComments();
+                            if (IsAtEnd() || Peek() != '(')
+                            {
+                                throw new ScriptParseException("Expected '(' after repeat.", _line, _column);
+                            }
+
+                            _tokens.Add(ReadParenthesizedText(_line, _column, TokenKind.RepeatText, "repeat"));
+                        }
 
                         break;
                     }
@@ -121,6 +131,7 @@ public sealed class ScriptLexer
             "let" => new ScriptToken(TokenKind.Let, word, line, column),
             "wait" => new ScriptToken(TokenKind.Wait, word, line, column),
             "loop" => new ScriptToken(TokenKind.Loop, word, line, column),
+            "repeat" => new ScriptToken(TokenKind.Repeat, word, line, column),
             "in" => new ScriptToken(TokenKind.In, word, line, column),
             _ => throw new ScriptParseException($"Unexpected keyword '{word}'.", line, column),
         };
@@ -136,11 +147,11 @@ public sealed class ScriptLexer
         }
 
         return Peek() == '('
-            ? ReadParenthesizedConditionText(line, column)
+            ? ReadParenthesizedText(line, column, TokenKind.ConditionText, "if")
             : ReadBareConditionText(line, column);
     }
 
-    private ScriptToken ReadParenthesizedConditionText(int line, int column)
+    private ScriptToken ReadParenthesizedText(int line, int column, TokenKind kind, string keyword)
     {
         Advance();
 
@@ -197,7 +208,7 @@ public sealed class ScriptLexer
                 depth--;
                 if (depth == 0)
                 {
-                    return new ScriptToken(TokenKind.ConditionText, builder.ToString().Trim(), line, column);
+                    return new ScriptToken(kind, builder.ToString().Trim(), line, column);
                 }
 
                 builder.Append(current);
@@ -207,7 +218,7 @@ public sealed class ScriptLexer
             builder.Append(current);
         }
 
-        throw new ScriptParseException("Unterminated if(...) condition.", line, column);
+        throw new ScriptParseException($"Unterminated {keyword}(...) expression.", line, column);
     }
 
     private ScriptToken ReadBareConditionText(int line, int column)

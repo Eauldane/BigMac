@@ -21,6 +21,8 @@ public sealed record IfStatement(ExpressionNode Condition, ScriptBlock ThenBlock
 
 public sealed record LoopStatement(ScriptBlock Block) : ScriptStatement;
 
+public sealed record RepeatStatement(ExpressionNode Count, ScriptBlock Block, int Line, int Column) : ScriptStatement;
+
 public sealed record ScriptBlock(IReadOnlyList<ScriptStatement> Statements);
 
 public enum ChanceConditionKind
@@ -56,6 +58,7 @@ public enum TokenKind
     Let,
     Wait,
     Loop,
+    Repeat,
     In,
     Number,
     LeftParen,
@@ -65,6 +68,7 @@ public enum TokenKind
     ConditionText,
     LetText,
     WaitText,
+    RepeatText,
     CommandLine,
     EndOfFile,
 }
@@ -113,7 +117,7 @@ public static class ScriptStructureInspector
     {
         foreach (var statement in statements)
         {
-            if (statement is LoopStatement)
+            if (statement is LoopStatement or RepeatStatement)
             {
                 return true;
             }

@@ -25,5 +25,20 @@
     <Compile Include="..\BigMac\Scripting\ScriptLexer.cs" Link="Scripting\ScriptLexer.cs" />
     <Compile Include="..\BigMac\Scripting\ScriptParser.cs" Link="Scripting\ScriptParser.cs" />
     <Compile Include="..\BigMac\Scripting\ScriptRuntime.cs" Link="Scripting\ScriptRuntime.cs" />
+    <Compile Include="..\BigMac\Scripting\ScriptHighlighter.cs" Link="Scripting\ScriptHighlighter.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Glyph.cs" Link="Editor\Glyph.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\PaletteIndex.cs" Link="Editor\PaletteIndex.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Line.cs" Link="Editor\Line.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Coordinates.cs" Link="Editor\Coordinates.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\SelectionState.cs" Link="Editor\SelectionState.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\SelectionMode.cs" Link="Editor\SelectionMode.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Editor\TextEditorSelection.cs" Link="Editor\TextEditorSelection.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Editor\TextEditorMovement.cs" Link="Editor\TextEditorMovement.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Util.cs" Link="Editor\Util.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Editor\TextEditorOptions.cs" Link="Editor\TextEditorOptions.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Editor\TextEditorText.cs" Link="Editor\TextEditorText.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Editor\TextEditorColor.cs" Link="Editor\TextEditorColor.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Syntax\ISyntaxHighlighter.cs" Link="Editor\ISyntaxHighlighter.cs" />
+    <Compile Include="..\BigMac\ThirdParty\TextEdit\Syntax\NullSyntaxHighlighter.cs" Link="Editor\NullSyntaxHighlighter.cs" />
   </ItemGroup>
 </Project>

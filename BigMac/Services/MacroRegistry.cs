@@ -209,10 +209,10 @@ public sealed class MacroRegistry : IDisposable
             return;
         }
 
-        _ = ExecuteOrToggleMacroAsync(macro);
+        _ = ExecuteOrToggleMacroAsync(macro, arguments);
     }
 
-    private async Task ExecuteOrToggleMacroAsync(SavedMacroDefinition macro)
+    private async Task ExecuteOrToggleMacroAsync(SavedMacroDefinition macro, string arguments)
     {
         if (!_isEnabled)
         {
@@ -235,7 +235,7 @@ public sealed class MacroRegistry : IDisposable
                 return;
             }
 
-            await _executor.ExecuteAsync(program, new LiveCommandSink(macro.AllowDangerousCommands), execution.Token).ConfigureAwait(false);
+            await _executor.ExecuteAsync(program, new LiveCommandSink(macro.AllowDangerousCommands), execution.Token, arguments).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (execution?.IsCancellationRequested == true)
         {

@@ -38,6 +38,8 @@ public static class ExpressionVariableDescriber
         "in_combat",
         "mounted",
         "gposing",
+        "args",
+        "arg_count",
     };
 
     public static bool IsBuiltInVariableName(string name)
@@ -63,6 +65,8 @@ public static class ExpressionVariableDescriber
             "in_combat" => "whether the player is in combat",
             "mounted" => "whether the player is mounted",
             "gposing" => "whether the player is in group pose",
+            "args" => "the raw arguments passed to this macro",
+            "arg_count" => "the number of arguments passed to this macro",
             _ => $"the value of {name}",
         };
 }

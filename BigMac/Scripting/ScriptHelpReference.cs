@@ -47,8 +47,8 @@ public static class ScriptHelpReference
                     """),
                 new ScriptHelpEntry(
                     "Loop blocks",
-                    "Use loop { ... } to repeat a block until it is cancelled. Running the same macro again cancels its active loop, and moving also stops looping macros.",
-                    "loop { ... }",
+                    "Use loop { ... } to repeat a block until it is cancelled, or repeat(count) { ... } to run a block a fixed number of times. Running the same macro again cancels its active execution, and moving also stops looping macros, including bounded repeats.",
+                    "loop { ... } or repeat(3) { ... }",
                     """
                     loop {
                         /ac "Sprint"
@@ -208,8 +208,20 @@ public static class ScriptHelpReference
             ]),
         new ScriptHelpSection(
             "Loops",
-            "Loop blocks repeat a nested block until the macro is cancelled. Re-running the same looping macro toggles it off, and movement also cancels active loops.",
+            "Use loop for indefinite repetition or repeat(count) for a bounded number of iterations. Re-running the same looping macro toggles it off, and movement cancels both kinds. These cancellation rules apply to any macro containing a loop or repeat block, including commands before or after that block.",
             [
+                new ScriptHelpEntry(
+                    "Bounded repetition",
+                    "repeat(count) runs its block exactly count times, then continues with the next statement. The count is evaluated once when the block is reached and must be a non-negative whole number. Zero will skip the block for if you're doing randomisation. Numeric expressions and local bindings are supported, but text such as arg(1) is not automatically converted to a number. Each iteration has a fresh local scope and can read outer bindings and macro arguments. Repeats can be nested and contain if/else, chance, waits, or other loops. Execution yields between iterations, but this does not add a timed pause; include wait(...) to space out commands.",
+                    "repeat(count) { ... }",
+                    """
+                    let count = choose(arg(1) == "short", 2, 5)
+                    repeat(count) {
+                        /echo Tick.
+                        wait(1)
+                    }
+                    /echo Finished.
+                    """),
                 new ScriptHelpEntry(
                     "Basic loop",
                     "Use loop { ... } to repeat commands. In practice you should include wait(...) inside the loop body so it does not hammer commands continuously.",
@@ -309,6 +321,19 @@ public static class ScriptHelpReference
             "Named variables are available inside ${...} interpolation and other expressions such as random(...). Variables can also be used directly in if(...), or compared with <, >, ==, !=, <=, and >=.",
             [
                 new ScriptHelpEntry(
+                    "Macro arguments",
+                    "args contains the original argument text passed after the macro's slash command. arg_count is the number of arguments, and arg(1) returns the first argument as text (indexes start at 1). Missing arguments return an empty string; use default(arg(1), \"fallback\") to provide a default. Arguments are private to each execution and remain available in nested blocks and after waits. Calling another macro passes only the arguments explicitly written in that command.",
+                    """
+                    ${args}
+                    ${arg_count}
+                    ${arg(1)}
+                    """,
+                    """
+                    // If saved as /greet, run: /greet "Momodi"
+                    let name = default(arg(1), "friend")
+                    /echo Hello, ${name}!
+                    """),
+                new ScriptHelpEntry(
                     "Current job and level",
                     "Available variables: job_abbr, job_id, job_name, level, and role. level uses your effective level, so it reflects level sync. role is a simple string such as tank, healer, dps, or unknown.",
                     """
@@ -388,6 +413,16 @@ public static class ScriptHelpReference
             "Functions",
             "BigMac supports built-in expression functions and state query functions.",
             [
+                new ScriptHelpEntry(
+                    "arg(index)",
+                    "Returns one argument as text using a positive whole-number index, starting at 1. Empty double quotes count as an empty argument. Inside double quotes, backslash can escape a double quote or another backslash. Single quotes are literal characters. indexes past arg_count return an empty string.",
+                    "arg(1)",
+                    """
+                    // Run this macro with: hello "two words"
+                    if (arg_count >= 2 && arg(1) == "hello") {
+                        /echo ${arg(2)}
+                    }
+                    """),
                 new ScriptHelpEntry(
                     "random(...)",
                     "Chooses one random option. You can pass an array as a single argument or pass multiple arguments directly.",
